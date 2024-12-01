@@ -12,9 +12,9 @@ import (
 
 // DBService интерфейс для работы с базой данных.
 type DBService interface {
-	AddOrder(ctx context.Context, order *model.OrderDetails) error
-	GetOrder(ctx context.Context, orderUID string) (*model.OrderDetails, error)
-	GetRecentOrderIDs(ctx context.Context, limit int) ([]string, error)
+	AddOrder(order *model.OrderDetails) error
+	GetOrder(orderUID string) (*model.OrderDetails, error)
+	GetRecentOrderIDs(limit int) ([]string, error)
 }
 
 type dbService struct {
@@ -36,16 +36,16 @@ func New(connString string, logger *slog.Logger) (DBService, error) {
 }
 
 // AddOrder добавляет заказ в базу данных.
-func (s *dbService) AddOrder(ctx context.Context, order *model.OrderDetails) error {
-	tx, err := s.pool.Begin(ctx)
+func (s *dbService) AddOrder(order *model.OrderDetails) error {
+	tx, err := s.pool.Begin(context.Background())
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(ctx)
+	defer tx.Rollback(context.Background())
 
 	// Добавление AddressDetails
 	var deliveryID int
-	err = tx.QueryRow(ctx,
+	err = tx.QueryRow(context.Background(),
 		`INSERT INTO delivery (name, phone, zip, city, address, region, email)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7)
 		 RETURNING id`,
@@ -58,7 +58,7 @@ func (s *dbService) AddOrder(ctx context.Context, order *model.OrderDetails) err
 	}
 
 	// Добавление PaymentDetails
-	_, err = tx.Exec(ctx,
+	_, err = tx.Exec(context.Background(),
 		`INSERT INTO payment (transaction, request_id, currency, provider, amount, payment_dt, bank, delivery_cost, goods_total, custom_fee)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
 		order.Payment.TransactionID, order.Payment.RequestID, order.Payment.Currency,
@@ -70,7 +70,7 @@ func (s *dbService) AddOrder(ctx context.Context, order *model.OrderDetails) err
 	}
 
 	// Добавление OrderDetails
-	_, err = tx.Exec(ctx,
+	_, err = tx.Exec(context.Background(),
 		`INSERT INTO orders (order_uid, track_number, entry, delivery_id, payment_id, locale, internal_signature, customer_id, delivery_service, shardkey, sm_id, date_created, oof_shard)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
 		order.OrderID, order.TrackingNumber, order.EntryPoint, deliveryID, order.Payment.TransactionID,
@@ -83,7 +83,7 @@ func (s *dbService) AddOrder(ctx context.Context, order *model.OrderDetails) err
 
 	// Добавление ProductItem
 	for _, item := range order.Products {
-		_, err = tx.Exec(ctx,
+		_, err = tx.Exec(context.Background(),
 			`INSERT INTO items (chrt_id, track_number, price, rid, name, sale, size, total_price, nm_id, brand, status)
 			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
 			item.ChartID, item.TrackingNum, item.Price, item.RID, item.Name,
@@ -94,7 +94,7 @@ func (s *dbService) AddOrder(ctx context.Context, order *model.OrderDetails) err
 		}
 	}
 
-	err = tx.Commit(ctx)
+	err = tx.Commit(context.Background())
 	if err != nil {
 		s.logger.Error("Failed to commit transaction", slog.Any("error", err))
 		return err
@@ -104,8 +104,8 @@ func (s *dbService) AddOrder(ctx context.Context, order *model.OrderDetails) err
 }
 
 // GetOrder получает заказ по UID.
-func (s *dbService) GetOrder(ctx context.Context, orderUID string) (*model.OrderDetails, error) {
-	row := s.pool.QueryRow(ctx, `SELECT * FROM orders WHERE order_uid = $1`, orderUID)
+func (s *dbService) GetOrder(orderUID string) (*model.OrderDetails, error) {
+	row := s.pool.QueryRow(context.Background(), `SELECT * FROM orders WHERE order_uid = $1`, orderUID)
 	var orderRecord struct {
 		OrderUID        string
 		TrackNumber     string
@@ -132,7 +132,7 @@ func (s *dbService) GetOrder(ctx context.Context, orderUID string) (*model.Order
 
 	// Fetch delivery details
 	var deliveryRecord model.AddressDetails
-	err := s.pool.QueryRow(ctx, `SELECT name, phone, zip, city, address, region, email FROM delivery WHERE id = $1`, orderRecord.DeliveryID).
+	err := s.pool.QueryRow(context.Background(), `SELECT name, phone, zip, city, address, region, email FROM delivery WHERE id = $1`, orderRecord.DeliveryID).
 		Scan(&deliveryRecord.FullName, &deliveryRecord.Phone, &deliveryRecord.ZipCode, &deliveryRecord.City,
 			&deliveryRecord.Street, &deliveryRecord.Region, &deliveryRecord.Email)
 	if err != nil {
@@ -142,7 +142,7 @@ func (s *dbService) GetOrder(ctx context.Context, orderUID string) (*model.Order
 
 	// Fetch payment details
 	var paymentRecord model.PaymentDetails
-	err = s.pool.QueryRow(ctx, `SELECT transaction, request_id, currency, provider, amount, payment_dt, bank, delivery_cost, goods_total, custom_fee FROM payment WHERE transaction = $1`, orderRecord.PaymentID).
+	err = s.pool.QueryRow(context.Background(), `SELECT transaction, request_id, currency, provider, amount, payment_dt, bank, delivery_cost, goods_total, custom_fee FROM payment WHERE transaction = $1`, orderRecord.PaymentID).
 		Scan(&paymentRecord.TransactionID, &paymentRecord.RequestID, &paymentRecord.Currency, &paymentRecord.Provider,
 			&paymentRecord.Amount, &paymentRecord.PaymentDate, &paymentRecord.Bank, &paymentRecord.DeliveryCost,
 			&paymentRecord.TotalGoods, &paymentRecord.CustomFee)
@@ -152,7 +152,7 @@ func (s *dbService) GetOrder(ctx context.Context, orderUID string) (*model.Order
 	}
 
 	// Fetch items
-	rows, err := s.pool.Query(ctx, `SELECT chrt_id, track_number, price, rid, name, sale, size, total_price, nm_id, brand, status FROM items WHERE chrt_id IN (SELECT chrt_id FROM order_item_conn WHERE order_uid = $1)`, orderRecord.OrderUID)
+	rows, err := s.pool.Query(context.Background(), `SELECT chrt_id, track_number, price, rid, name, sale, size, total_price, nm_id, brand, status FROM items WHERE chrt_id IN (SELECT chrt_id FROM order_item_conn WHERE order_uid = $1)`, orderRecord.OrderUID)
 	if err != nil {
 		s.logger.Error("Failed to fetch items", slog.Any("error", err))
 		return nil, err
@@ -189,8 +189,8 @@ func (s *dbService) GetOrder(ctx context.Context, orderUID string) (*model.Order
 }
 
 // GetRecentOrderIDs возвращает последние `limit` заказов.
-func (s *dbService) GetRecentOrderIDs(ctx context.Context, limit int) ([]string, error) {
-	rows, err := s.pool.Query(ctx, `SELECT order_uid FROM orders ORDER BY date_created DESC LIMIT $1`, limit)
+func (s *dbService) GetRecentOrderIDs(limit int) ([]string, error) {
+	rows, err := s.pool.Query(context.Background(), `SELECT order_uid FROM orders ORDER BY date_created DESC LIMIT $1`, limit)
 	if err != nil {
 		s.logger.Error("Failed to fetch recent order IDs", slog.Any("error", err))
 		return nil, err
