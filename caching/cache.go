@@ -18,7 +18,7 @@ type CacheService interface {
 type DBService interface {
 	AddOrder(order *model.OrderDetails) error
 	GetOrder(orderUID string) (*model.OrderDetails, error)
-	GetLastOrderIds(limit int) ([]string, error)
+	GetRecentOrderIDs(limit int) ([]string, error)
 }
 
 // cacheService реализует CacheService.
@@ -58,7 +58,7 @@ func NewCacheService(logger *slog.Logger, cacheSize int, db DBService) (CacheSer
 // loadCache загружает последние заказы из базы в кэш.
 func (s *cacheService) loadCache() error {
 	s.logger.Info("Initializing cache with recent orders...")
-	orderIDs, err := s.db.GetLastOrderIds(s.maxSize)
+	orderIDs, err := s.db.GetRecentOrderIDs(s.maxSize)
 	if err != nil {
 		s.logger.Error("Failed to load recent orders from DB", slog.Any("error", err))
 		return err
