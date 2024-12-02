@@ -1,0 +1,56 @@
+version: "3.9"
+
+services:
+  service:
+    build: .
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+
+  postgres:
+    build:
+      context: ./scripts
+      dockerfile: Dockerfile
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-1234}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-user}"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+
+  kafka:
+    hostname: kafka
+    image: bitnami/kafka:latest
+    restart: always
+    environment:
+      - KAFKA_CFG_NODE_ID=1
+      - KAFKA_CFG_PROCESS_ROLES=controller,broker
+      - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=1@kafka:9093
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:9094
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092,EXTERNAL://localhost:9094
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      - KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE=true
+      - ALLOW_PLAINTEXT_LISTENER=yes
+    ports:
+      - "9094:9094"
+    volumes:
+      # - ./kafka:/var/lib/kafka/data
+      - ./scripts/run-init-kafka-topics.sh:/docker-entrypoint-initdb.d/run-init-kafka-topics.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "echo 'test-message' | kafka-console-producer.sh --broker-list kafka:9092 --topic health-check-topic && kafka-console-consumer.sh --bootstrap-server kafka:9092 --topic health-check-topic --from-beginning --max-messages 1 | grep 'test-message'"]
+      interval: 15s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  pgdata:
