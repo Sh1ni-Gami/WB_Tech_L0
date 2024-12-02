@@ -1,0 +1,37 @@
+<html>
+
+<div>
+  Order uid:
+  <input id="order_uid" type="text" />
+</div>
+<button onclick="getOrder()"> Fetch Order </button>
+
+<pre><code id="result"> </code> </pre>
+
+<script>
+
+  const getOrder = () => {
+    const order_uid = document.querySelector("#order_uid").value;
+    let resultElement = document.querySelector("#result")
+    fetch(`/api/v1/order?order_uid=${order_uid}`)
+      .then((res) => {
+        if (res.status != 200) {
+          res.text().then((val) => {
+            resultElement.innerHTML = val
+          })
+          return
+        }
+        res.json()
+          .then((val) => {
+            resultElement.innerHTML = JSON.stringify(val, undefined, 2)
+          }).catch((err) => {
+            resultElement.innerHTML = err
+          })
+      }).catch((err) => {
+        resultElement.innerHTML = err
+      })
+  }
+
+</script>
+
+</html>
