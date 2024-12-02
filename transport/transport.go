@@ -121,7 +121,7 @@ func (t *httpTransport) interfaceHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	htmlFile, err := os.ReadFile("pages/form.html")
+	htmlFile, err := os.ReadFile("frontend/form.html")
 	if err != nil {
 		t.logger.Error("Failed to read HTML file", slog.Any("error", err))
 		http.Error(w, "Page not found", http.StatusNotFound)
